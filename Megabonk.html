@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Megabonk Save Editor</title>
+
+  <!-- Librairies -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <script src="https://unpkg.com/monaco-editor@0.50.0/min/vs/loader.js"></script>
+
+  <!-- Styles -->
+  <style>
+    :root{
+      --bg: #f5e6d0; /* parchment warm */
+      --panel: #fff6e8;
+      --accent: #d95319; /* orange Megabonk */
+      --accent-2:#b33a08;
+      --muted:#7a5a46;
+      --danger:#c23b2b;
+      --glass: rgba(255,255,255,0.6);
+      --shadow: 0 6px 18px rgba(20,10,0,0.08);
+      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#fdeed6 0%, var(--bg) 100%);color:var(--muted);}
+    .wrap{
+      max-width:1100px;margin:28px auto;padding:22px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.9), var(--panel));box-shadow: var(--shadow);border:1px solid rgba(180,130,80,0.12);
+      display:flex;flex-direction:column;gap:16px;
+    }
+
+    /* Header */
+    .header{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+    }
+    .title{
+      display:flex;flex-direction:column;
+    }
+    .title h1{
+      margin:0;font-size:28px;letter-spacing:1px;color:var(--accent-2);text-shadow:0 3px 0 rgba(255,255,255,0.6);
+      font-weight:800;
+      font-family: "Trebuchet MS", "Comic Sans MS", Arial, sans-serif;
+    }
+    .subtitle{
+      margin-top:6px;font-size:13px;color:#8a6b4a;
+    }
+
+    /* info box - save paths */
+    .paths{
+      font-size:13px;color:#6b4e37;background:linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.35));padding:10px;border-radius:8px;border:1px solid rgba(180,130,80,0.08);
+    }
+    .paths code{font-family:monospace;background:rgba(0,0,0,0.02);padding:2px 6px;border-radius:4px;}
+
+    /* Controls */
+    .controls{
+      display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+    }
+    .file-info{
+      display:flex;flex-direction:column;margin-left:6px;font-size:13px;color:#6a4f3a;
+    }
+    .file-name{font-weight:600;color:#6a3b0f;}
+    .buttons{
+      display:flex;gap:8px;flex-wrap:wrap;
+    }
+
+    button.action{
+      background:linear-gradient(180deg, #ffd9b8, #ffc197);
+      border:1px solid rgba(180,100,40,0.25);
+      padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:700;color:var(--accent-2);
+      box-shadow:0 4px 8px rgba(170,90,30,0.08);
+      transition:transform .12s ease, box-shadow .12s ease;
+    }
+    button.action:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(170,90,30,0.14);}
+    button.ghost{
+      background:transparent;border:1px dashed rgba(120,80,40,0.12);color:var(--muted);font-weight:600;padding:8px 10px;border-radius:8px;
+    }
+
+    input[type="file"]{
+      display:inline-block;
+      padding:6px 10px;border-radius:8px;border:1px solid rgba(120,80,40,0.06);background:transparent;cursor:pointer;
+    }
+
+    /* Editor area */
+    #editor{height:540px;border-radius:8px;overflow:hidden;border:1px solid rgba(0,0,0,0.06);}
+
+    /* status bar */
+    .statusbar{
+      display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:8px;background:linear-gradient(180deg, rgba(255,255,255,0.5), rgba(255,255,255,0.35));font-size:13px;color:#6b4e37;border:1px solid rgba(180,130,80,0.06);
+    }
+    .status-left{display:flex;gap:12px;align-items:center;}
+    .status-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.7);font-weight:700;color:var(--accent-2);border:1px solid rgba(180,130,80,0.06);}
+    .status-error{color:var(--danger);font-weight:700;}
+    .message{color:#6b4e37;font-size:13px;}
+
+    /* snackbar / inline messages */
+    .msg{
+      padding:8px 12px;border-radius:8px;background:rgba(255,255,255,0.6);border-left:4px solid var(--accent);color:#6b4e37;font-weight:600;
+    }
+    .msg.error{border-left-color:var(--danger);color:var(--danger);}
+
+    /* small helpers */
+    .muted{color:#8a6b4a;font-size:13px;}
+    .flexrow{display:flex;gap:8px;align-items:center;}
+    @media (max-width:880px){
+      #editor{height:420px;}
+      .header{flex-direction:column;align-items:flex-start;gap:10px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap" role="main">
+    <div class="header">
+      <div class="title">
+        <h1>Megabonk Save Editor</h1>
+        <div class="subtitle">Éditeur de sauvegarde — sauvegarde ton fichier avant modification !</div>
+      </div>
+
+      <div class="file-info" aria-live="polite">
+        <div class="muted">Fichier :</div>
+        <div id="currentFile" class="file-name">Aucun fichier chargé</div>
+      </div>
+    </div>
+
+    <div class="paths">
+      <strong>Chemins de sauvegarde (ex.)</strong>
+      <div style="margin-top:6px;font-size:13px;">
+        - Windows: <code>%AppData%\..\LocalLow\Ved\Megabonk\Saves\CloudDir\YOUR_STEAM_ID\progression.json</code><br>
+        - Linux: <code>~/.config/unity3d/Ved/Megabonk/Saves/CloudDir/YOUR_STEAM_ID/progression.json</code><br>
+        - MacOS: <code>~/Library/Application Support/Ved/Megabonk/Saves/CloudDir/YOUR_STEAM_ID/progression.json</code>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:#7a5a46;">Fais une copie de sauvegarde avant d'éditer — cet outil valide la syntaxe JSON mais ne garantit pas la compatibilité complète.</div>
+    </div>
+
+    <div class="controls" aria-hidden="false">
+      <div class="flexrow">
+        <input id="fileInput" type="file" accept=".json,.txt" />
+        <div class="buttons">
+          <button id="loadFileButton" class="action" title="Charger le fichier">📂 Charger le fichier</button>
+          <button id="decryptButton" class="action" title="Décrypter le contenu">🔓 Décrypter</button>
+          <button id="encryptButton" class="action" title="Encrypter le contenu">🔒 Encrypter</button>
+          <button id="beautifyButton" class="ghost" title="Reformater JSON (pratique avant encrypter)">✍️ Beautify JSON</button>
+          <button id="saveFileButton" class="action" title="Télécharger le fichier (après encryt) 💾">💾 Télécharger</button>
+        </div>
+      </div>
+
+      <div style="margin-left:auto;min-width:220px;">
+        <div class="muted" style="font-size:12px;">Statut :</div>
+        <div id="statusMsg" class="msg" style="margin-top:6px;">Prêt — charge un fichier pour commencer.</div>
+      </div>
+    </div>
+
+    <div id="editor" aria-label="Zone d'édition JSON"></div>
+
+    <div class="statusbar" role="status">
+      <div class="status-left">
+        <div id="statePill" class="status-pill">Aucun fichier</div>
+        <div class="message" id="lineCol">—</div>
+      </div>
+      <div id="footerRight" class="muted">N'oublie pas : sauvegarde avant modification</div>
+    </div>
+  </div>
+
+  <!-- JavaScript -->
+  <script>
+    // === Setup Monaco Loader ===
+    require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@0.50.0/min/vs' }});
+    let editor, model;
+    require(['vs/editor/editor.main'], function() {
+      editor = monaco.editor.create(document.getElementById('editor'), {
+        value: '',
+        language: 'json',
+        automaticLayout: true,
+        theme: 'vs', // light theme to match the warm background
+        wordWrap: 'on',
+        minimap:{enabled:false},
+        fontSize:14,
+        automaticTokenization: true,
+      });
+
+      model = editor.getModel();
+      setupEditorListeners();
+    });
+
+    // === State variables ===
+    let fileName = '';
+    let encrypted = false;
+    let newLine = '\n';
+
+    // === Elements ===
+    const fileInput = document.getElementById('fileInput');
+    const loadFileButton = document.getElementById('loadFileButton');
+    const decryptButton = document.getElementById('decryptButton');
+    const encryptButton = document.getElementById('encryptButton');
+    const saveFileButton = document.getElementById('saveFileButton');
+    const beautifyButton = document.getElementById('beautifyButton');
+    const currentFile = document.getElementById('currentFile');
+    const statusMsg = document.getElementById('statusMsg');
+    const statePill = document.getElementById('statePill');
+    const lineCol = document.getElementById('lineCol');
+
+    // === Crypto constants (identique à l'original) ===
+    const ivBytes = [55,134,78,241,92,36,188,10,203,198,14,57,120,239,31,6];
+    const keyBytes = [217,64,132,13,90,231,199,144,123,9,36,55,188,12,91,68,170,247,14,39,62,18,208,251,77,162,184,199,103,204,145,29];
+
+    function bytesToHex(arr){ return arr.map(b => b.toString(16).padStart(2,'0')).join(''); }
+    const keyWA = CryptoJS.enc.Hex.parse(bytesToHex(keyBytes));
+    const ivWA  = CryptoJS.enc.Hex.parse(bytesToHex(ivBytes));
+
+    function encrypt(text) {
+      const encryptedText = CryptoJS.AES.encrypt(text, keyWA, { iv: ivWA, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 });
+      return encryptedText.ciphertext.toString(CryptoJS.enc.Base64);
+    }
+
+    function decrypt(text) {
+      const cipherParams = CryptoJS.lib.CipherParams.create({ ciphertext: CryptoJS.enc.Base64.parse(text) });
+      const decryptedText = CryptoJS.AES.decrypt(cipherParams, keyWA, { iv: ivWA, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 });
+      return CryptoJS.enc.Utf8.stringify(decryptedText);
+    }
+
+    // === helpers UI ===
+    function setStatus(text, isError=false){
+      statusMsg.textContent = text;
+      statusMsg.className = 'msg' + (isError ? ' error' : '');
+    }
+    function setPill(text){
+      statePill.textContent = text;
+    }
+    function setFileName(name){
+      currentFile.textContent = name || 'Aucun fichier chargé';
+      fileName = name || '';
+    }
+
+    // === Editor listeners & JSON diagnostics ===
+    function setupEditorListeners(){
+      if(!editor) return;
+      editor.onDidChangeModelContent(() => {
+        try {
+          const value = editor.getValue();
+          JSON.parse(value);
+          monaco.editor.setModelMarkers(editor.getModel(), 'json', []);
+          setStatus('JSON valide', false);
+        } catch (e) {
+          // Monaco's JSON.parse error doesn't give line/col reliably across browsers.
+          // We'll create a simple marker at line 1 if parse fails.
+          let markers = [];
+          try {
+            // Try to locate approximate position (best-effort)
+            const msg = e.message || 'Erreur JSON';
+            const lineMatch = msg.match(/at position (\d+)/);
+            markers.push({
+              severity: monaco.MarkerSeverity.Error,
+              startLineNumber: 1,
+              startColumn: 1,
+              endLineNumber: 1,
+              endColumn: 1,
+              message: msg
+            });
+          } catch (ex){
+            markers = [{
+              severity: monaco.MarkerSeverity.Error,
+              startLineNumber: 1,
+              startColumn: 1,
+              endLineNumber: 1,
+              endColumn: 1,
+              message: 'Erreur JSON'
+            }];
+          }
+          monaco.editor.setModelMarkers(editor.getModel(), 'json', markers);
+          setStatus('JSON invalide — corrige avant d’encrypter', true);
+        }
+        updateCursorPosition();
+      });
+
+      editor.onDidChangeCursorPosition(updateCursorPosition);
+      window.addEventListener('resize', ()=> editor.layout());
+    }
+
+    function updateCursorPosition(){
+      if(!editor) return;
+      const pos = editor.getPosition();
+      if(pos) lineCol.textContent = `Ligne ${pos.lineNumber}, Col ${pos.column}`;
+      else lineCol.textContent = '—';
+    }
+
+    // === Actions ===
+    loadFileButton.addEventListener('click', () => {
+      if(!fileInput.files || fileInput.files.length === 0){
+        setStatus('Aucun fichier sélectionné', true);
+        return;
+      }
+      const file = fileInput.files[0];
+      setFileName(file.name);
+      const reader = new FileReader();
+      reader.onload = function(e){
+        const text = e.target.result;
+        // detect line endings
+        newLine = text.includes('\r\n') ? '\r\n' : '\n';
+        if(editor) editor.setValue(text);
+        encrypted = false;
+        setPill('Fichier chargé');
+        setStatus('Fichier chargé — tu peux décrypter ou éditer');
+      };
+      reader.onerror = function(){
+        setStatus('Erreur lors de la lecture du fichier', true);
+      };
+      reader.readAsText(file);
+    });
+
+    decryptButton.addEventListener('click', () => {
+      if(!editor) { setStatus('Éditeur non initialisé',true); return; }
+      const text = editor.getValue().trim();
+      if(!text){
+        setStatus('Rien à décrypter', true);
+        return;
+      }
+      try {
+        const out = decrypt(text);
+        // if decryption returns empty string, likely invalid cipher
+        if(out === ''){
+          throw new Error('Contenu vide après décryptage — format invalide ?');
+        }
+        // preserve line endings style
+        newLine = out.includes('\r\n') ? '\r\n' : '\n';
+        editor.setValue(out);
+        encrypted = false;
+        setPill('Décrypté');
+        setStatus('Décryptage réussi — tu peux modifier le JSON');
+      } catch (e) {
+        setStatus('Erreur lors du décryptage — contenu invalide ou clef incorrecte', true);
+      }
+    });
+
+    encryptButton.addEventListener('click', () => {
+      if(!editor) { setStatus('Éditeur non initialisé',true); return; }
+      const text = editor.getValue();
+      try {
+        JSON.parse(text); // assure valid JSON
+      } catch (e) {
+        setStatus('JSON invalide — corrige avant d’encrypter', true);
+        return;
+      }
+      try {
+        const normalized = text.replace(/\r?\n/g, newLine);
+        const out = encrypt(normalized);
+        editor.setValue(out);
+        encrypted = true;
+        setPill('Encrypté');
+        setStatus('Chiffrement réussi — prêt à télécharger');
+      } catch (e) {
+        setStatus('Erreur lors du chiffrement', true);
+      }
+    });
+
+    saveFileButton.addEventListener('click', () => {
+      if(!encrypted){
+        setStatus('Le fichier doit être encrypté avant le téléchargement', true);
+        return;
+      }
+      try {
+        const blob = new Blob([editor.getValue()], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName || 'savefile.dat';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        setStatus('Téléchargement lancé — vérifie ton dossier de téléchargements');
+      } catch (e) {
+        setStatus('Erreur lors de la création du fichier', true);
+      }
+    });
+
+    beautifyButton.addEventListener('click', () => {
+      if(!editor) return;
+      const text = editor.getValue();
+      try {
+        const parsed = JSON.parse(text);
+        const pretty = JSON.stringify(parsed, null, 2);
+        editor.setValue(pretty.replace(/\r?\n/g, newLine));
+        setStatus('JSON reformaté (beautified)');
+      } catch (e) {
+        setStatus('Impossible de reformater : JSON invalide', true);
+      }
+    });
+
+    // Initialize UI default
+    setFileName('');
+    setStatus('Prêt — charge un fichier pour commencer.');
+    setPill('Aucun fichier');
+
+  </script>
+</body>
+</html>
