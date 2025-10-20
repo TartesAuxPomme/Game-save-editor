@@ -156,7 +156,7 @@ encryptBtn.onclick = () => {
   const blob = new Blob([encrypted], {type: "application/octet-stream"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "modified_save.sav";
+  a.download = "GameDataFull.json";
   a.click();
   statusEl.textContent = "Fichier recrytpé et téléchargé 💾";
 };
